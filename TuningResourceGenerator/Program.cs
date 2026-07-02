@@ -27,10 +27,11 @@ namespace Destrospean.TuningResourceGenerator
                 // Iterate through the classes with tunable fields
                 foreach (var type in AssemblyDefinition.ReadAssembly(new ScriptResource.ScriptResource(0, ((s3pi.Interfaces.APackage)package).GetResource(resourceIndexEntry)).Assembly.BaseStream).MainModule.GetTypes())
                 {
-                    var fields = Array.FindAll(type.Fields.ToArray(), x => Array.Exists(x.CustomAttributes.ToArray(), y => y.AttributeType.Name == "Tunable" || y.AttributeType.Name == "TunableAttribute"));
+                    // Fetch all the tunable fields of the current class
+                    var tunableFields = Array.FindAll(type.Fields.ToArray(), x => Array.Exists(x.CustomAttributes.ToArray(), y => y.AttributeType.Name == "Tunable" || y.AttributeType.Name == "TunableAttribute"));
 
-                    // Fetch the comments for each tunable field (as strings; null for each tunable field that does not have a comment)
-                    var tunableComments = Array.ConvertAll(fields, x =>
+                    // Fetch the comments for all tunable fields (as strings; null for each tunable field that does not have a comment)
+                    var tunableComments = Array.ConvertAll(tunableFields, x =>
                         {
                             var index = Array.FindIndex(x.CustomAttributes.ToArray(), y => y.AttributeType.Name == "TunableComment" || y.AttributeType.Name == "TunableCommentAttribute");
                             return index == -1 ? null : " " + x.CustomAttributes[index].ConstructorArguments[0].Value.ToString().Trim(' ') + " ";
@@ -39,51 +40,50 @@ namespace Destrospean.TuningResourceGenerator
                     var hasTunableComments = !Array.TrueForAll(tunableComments, x => x == null);
 
                     // Create the XmlDocument object and load the template for tuning XMLs
-                    var document = new System.Xml.XmlDocument
+                    var xmlDocument = new System.Xml.XmlDocument
                         {
                             PreserveWhitespace = hasTunableComments
                         };
-                    document.LoadXml("<?xml version=\"1.0\" encoding=\"utf-8\"?>\r\n<base>\r\n  <Current_Tuning></Current_Tuning>\r\n</base>");
+                    xmlDocument.LoadXml("<?xml version=\"1.0\" encoding=\"utf-8\"?>\r\n<base>\r\n  <Current_Tuning></Current_Tuning>\r\n</base>");
 
-                    var currentTuningNode = document.SelectSingleNode("base/Current_Tuning");
+                    var currentTuningNode = xmlDocument.SelectSingleNode("base/Current_Tuning");
+
+                    // Check if a static constructor exists and group the instructions within said constructor by field name
+                    var instructionsByFieldName = new Dictionary<string, List<Instruction>>();
+                    var staticConstructorIndex = Array.FindIndex(type.Methods.ToArray(), y => y.IsConstructor && y.IsStatic);
+                    if (staticConstructorIndex > -1)
+                    {
+                        var tempInstructions = new List<Instruction>();
+                        foreach (var instruction in type.Methods[staticConstructorIndex].Body.Instructions)
+                        {
+                            if (instruction.OpCode == OpCodes.Stfld || instruction.OpCode == OpCodes.Stsfld)
+                            {
+                                instructionsByFieldName.Add(((FieldReference)instruction.Operand).Name, new List<Instruction>(tempInstructions));
+                                tempInstructions.Clear();
+                                continue;
+                            }
+                            tempInstructions.Add(instruction);
+                        }
+                    }
 
                     // Iterate through each of the tunable fields of the current class
-                    for (var i = 0; i < fields.Length; i++)
+                    for (var i = 0; i < tunableFields.Length; i++)
                     {
-                        var field = fields[i];
+                        var field = tunableFields[i];
 
                         // Check if there is a tunable comment for this field and add it to the XML if so
                         if (tunableComments[i] != null)
                         {
-                            var tunableComment = document.CreateComment(tunableComments[i]);
+                            var tunableComment = xmlDocument.CreateComment(tunableComments[i]);
                             currentTuningNode.AppendChild(tunableComment);
-                            currentTuningNode.InsertBefore(document.CreateSignificantWhitespace("\r\n    "), tunableComment);
+                            currentTuningNode.InsertBefore(xmlDocument.CreateSignificantWhitespace("\r\n    "), tunableComment);
                         }
 
                         object initialValue = null;
 
-                        var instructionsByField = new Dictionary<string, List<Instruction>>();
-
-                        // Check if a static constructor exists so as to fetch any assigned values of the tunable fields
-                        var staticConstructorIndex = Array.FindIndex(type.Methods.ToArray(), y => y.IsConstructor && y.IsStatic);
-                        if (staticConstructorIndex > -1)
-                        {
-                            var tempInstructions = new List<Instruction>();
-                            foreach (var instruction in type.Methods[staticConstructorIndex].Body.Instructions)
-                            {
-                                if (instruction.OpCode == OpCodes.Stfld || instruction.OpCode == OpCodes.Stsfld)
-                                {
-                                    instructionsByField.Add(((FieldReference)instruction.Operand).Name, new List<Instruction>(tempInstructions));
-                                    tempInstructions.Clear();
-                                    continue;
-                                }
-                                tempInstructions.Add(instruction);
-                            }
-                        }
-
                         // Fetch any values assigned in the code to the tunable field
                         List<Instruction> instructions;
-                        if (instructionsByField.TryGetValue(field.Name, out instructions))
+                        if (instructionsByFieldName.TryGetValue(field.Name, out instructions))
                         {
                             // Fetch the primitive value of the field
                             if (instructions.Count == 1)
@@ -116,29 +116,29 @@ namespace Destrospean.TuningResourceGenerator
                         }
 
                         // Create and add the tunable field as an element in the XML
-                        var tunableElement = document.CreateElement(field.Name);
+                        var tunableElement = xmlDocument.CreateElement(field.Name);
                         tunableElement.SetAttribute("value", initialValue?.ToString() ?? (field.FieldType.Name == "Boolean" ? "False" : field.FieldType.Name == "String" ? "" : "0"));
                         currentTuningNode.AppendChild(tunableElement);
 
                         // Do formatting for XMLs with comments
                         if (hasTunableComments)
                         {
-                            currentTuningNode.InsertBefore(document.CreateSignificantWhitespace("\r\n    "), tunableElement);
-                            currentTuningNode.InsertAfter(document.CreateSignificantWhitespace(i == fields.Length - 1 ? "\r\n  " : "\r\n"), tunableElement);
+                            currentTuningNode.InsertBefore(xmlDocument.CreateSignificantWhitespace("\r\n    "), tunableElement);
+                            currentTuningNode.InsertAfter(xmlDocument.CreateSignificantWhitespace(i == tunableFields.Length - 1 ? "\r\n  " : "\r\n"), tunableElement);
                         }
                     }
-                    if (fields.Length > 0)
+                    if (tunableFields.Length > 0)
                     {
                         // Create the XML stream and writer
-                        var stream = new System.IO.MemoryStream();
-                        var writer = System.Xml.XmlWriter.Create(stream, new System.Xml.XmlWriterSettings
+                        var xmlStream = new System.IO.MemoryStream();
+                        var xmlWriter = System.Xml.XmlWriter.Create(xmlStream, new System.Xml.XmlWriterSettings
                             {
                                 Indent = true,
                                 NewLineChars = "\r\n"
                             });
                         
                         // Save the XML to the stream
-                        document.Save(writer);
+                        xmlDocument.Save(xmlWriter);
 
                         // Get the hash of the namespace and class for the instance of the _XML resource
                         var instance = System.Security.Cryptography.FNV64.GetHash(type.FullName);
@@ -156,7 +156,7 @@ namespace Destrospean.TuningResourceGenerator
                         {
                             package.DeleteResource(matchingTuningResourceIndexEntries[0]);
                         }
-                        package.AddResource(new ResourceKey(0x333406C, 0, instance), stream, true);
+                        package.AddResource(new ResourceKey(0x333406C, 0, instance), xmlStream, true);
                     }
                 }
             }
