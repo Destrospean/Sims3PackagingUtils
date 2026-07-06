@@ -117,7 +117,7 @@ namespace Destrospean.TuningResourceGenerator
 
                         // Create and add the tunable field as an element in the XML
                         var tunableElement = xmlDocument.CreateElement(field.Name);
-                        tunableElement.SetAttribute("value", initialValue?.ToString() ?? (field.FieldType.Name == "Boolean" ? "False" : field.FieldType.Name == "String" ? "" : "0"));
+                        tunableElement.SetAttribute("value", initialValue?.ToString() ?? (field.FieldType.Name == "Boolean" ? "False" : field.FieldType.Name == "String" || field.FieldType.IsArray ? "" : "0"));
                         currentTuningNode.AppendChild(tunableElement);
 
                         // Do formatting for XMLs with comments
