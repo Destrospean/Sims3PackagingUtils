@@ -88,7 +88,7 @@ namespace Destrospean.TuningResourceGenerator
                             // Fetch the primitive value of the field
                             if (instructions.Count == 1)
                             {
-                                initialValue = instructions[0].Operand;
+                                initialValue = instructions[0].Operand ?? instructions[0].OpCode == OpCodes.Ldc_I4_1;
                             }
 
                             // Fetch the array value of the field
