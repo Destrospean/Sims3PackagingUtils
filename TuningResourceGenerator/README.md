@@ -1,3 +1,7 @@
+This repository is a WIP collection of tools for Sims 3 modding. Hereinafter are descriptions of the listed tools.
+
+### Tuning Resource Generator
+
 This is a tool to automatically generate tuning _XML resources from the assemblies in a .package file for The Sims 3.
 
 It works by the user dragging a package with the assemblies imported on top of the executable and said executable generates tunables and their comments (along with any assigned values in the code) as _XML resources, with the instance hash being that of the namespace + class of the class each tuning file corresponds to. It accounts for different classes by making a separate _XML resource for each class with tunable fields, and also works for packages with multiple assemblies.
