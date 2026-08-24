@@ -1,5 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Xml;
 using Mono.Cecil;
 using Mono.Cecil.Cil;
 
@@ -7,6 +9,27 @@ namespace Destrospean.TuningResourceGenerator
 {
     class Program
     {
+        static List<AssemblyDefinition> sAssemblies;
+
+        public static List<AssemblyDefinition> Assemblies
+        {
+            get
+            {
+                if (sAssemblies == null)
+                {
+                    sAssemblies = new List<AssemblyDefinition>();
+                    foreach (var name in typeof(Program).Assembly.GetManifestResourceNames())
+                    {
+                        if (name.EndsWith(".dll"))
+                        {
+                            sAssemblies.Add(AssemblyDefinition.ReadAssembly(typeof(Program).Assembly.GetManifestResourceStream(name)));
+                        }
+                    }
+                }
+                return sAssemblies;
+            }
+        }
+
         public static void Main(string[] args)
         {
             if (args.Length == 0)
@@ -40,7 +63,7 @@ namespace Destrospean.TuningResourceGenerator
                     var hasTunableComments = !Array.TrueForAll(tunableComments, x => x == null);
 
                     // Create the XmlDocument object and load the template for tuning XMLs
-                    var xmlDocument = new System.Xml.XmlDocument
+                    var xmlDocument = new XmlDocument
                         {
                             PreserveWhitespace = hasTunableComments
                         };
@@ -66,72 +89,12 @@ namespace Destrospean.TuningResourceGenerator
                         }
                     }
 
-                    // Iterate through each of the tunable fields of the current class
-                    for (var i = 0; i < tunableFields.Length; i++)
-                    {
-                        var field = tunableFields[i];
-
-                        // Check if there is a tunable comment for this field and add it to the XML if so
-                        if (tunableComments[i] != null)
-                        {
-                            var tunableComment = xmlDocument.CreateComment(tunableComments[i]);
-                            currentTuningNode.AppendChild(tunableComment);
-                            currentTuningNode.InsertBefore(xmlDocument.CreateSignificantWhitespace("\r\n    "), tunableComment);
-                        }
-
-                        object initialValue = null;
-
-                        // Fetch any values assigned in the code to the tunable field
-                        List<Instruction> instructions;
-                        if (instructionsByFieldName.TryGetValue(field.Name, out instructions))
-                        {
-                            // Fetch the primitive value of the field
-                            if (instructions.Count == 1)
-                            {
-                                initialValue = instructions[0].Operand ?? instructions[0].OpCode == OpCodes.Ldc_I4_1;
-                            }
-
-                            // Fetch the array value of the field
-                            if (instructions.Count > 1 && instructions[1].OpCode == OpCodes.Newarr)
-                            {
-                                // Remove the first four instructions as they are irrelevant (since we have already determined we are dealing with an array)
-                                instructions.RemoveRange(0, 4);
-
-                                var arrayString = "";
-                                for (var j = 0; j < instructions.Count; j++)
-                                {
-                                    if (instructions[j].OpCode.ToString().StartsWith("stelem"))
-                                    {
-                                        break;
-                                    }
-
-                                    // Get only the odd-numbered instructions (the ones that hold the elements), as the even-numbered ones are for the indices
-                                    if ((j & 1) == 1)
-                                    {
-                                        arrayString += instructions[j].Operand.ToString() + ",";
-                                    }
-                                }
-                                initialValue = arrayString.TrimEnd(',');
-                            }
-                        }
-
-                        // Create and add the tunable field as an element in the XML
-                        var tunableElement = xmlDocument.CreateElement(field.Name);
-                        tunableElement.SetAttribute("value", initialValue?.ToString() ?? (field.FieldType.Name == "Boolean" ? "False" : field.FieldType.Name == "String" || field.FieldType.IsArray ? "" : "0"));
-                        currentTuningNode.AppendChild(tunableElement);
-
-                        // Do formatting for XMLs with comments
-                        if (hasTunableComments)
-                        {
-                            currentTuningNode.InsertBefore(xmlDocument.CreateSignificantWhitespace("\r\n    "), tunableElement);
-                            currentTuningNode.InsertAfter(xmlDocument.CreateSignificantWhitespace(i == tunableFields.Length - 1 ? "\r\n  " : "\r\n"), tunableElement);
-                        }
-                    }
+                    PopulateFields(xmlDocument, currentTuningNode, tunableFields, tunableComments, hasTunableComments, instructionsByFieldName);
                     if (tunableFields.Length > 0)
                     {
                         // Create the XML stream and writer
-                        var xmlStream = new System.IO.MemoryStream();
-                        var xmlWriter = System.Xml.XmlWriter.Create(xmlStream, new System.Xml.XmlWriterSettings
+                        var xmlStream = new MemoryStream();
+                        var xmlWriter = XmlWriter.Create(xmlStream, new XmlWriterSettings
                             {
                                 Indent = true,
                                 NewLineChars = "\r\n"
@@ -169,6 +132,131 @@ namespace Destrospean.TuningResourceGenerator
 
             // Save the modified package
             package.SavePackage();
+        }
+
+        public static void PopulateFields(XmlDocument xmlDocument, XmlNode currentNode, FieldDefinition[] tunableFields, string[] tunableComments, bool hasTunableComments, Dictionary<string, List<Instruction>> instructionsByFieldName, string indentation = "    ")
+        {
+            // Iterate through each of the tunable fields of the current class
+            for (var i = 0; i < tunableFields.Length; i++)
+            {
+                var field = tunableFields[i];
+
+                // Check if there is a tunable comment for this field and add it to the XML if so
+                if (tunableComments[i] != null)
+                {
+                    var tunableComment = xmlDocument.CreateComment(tunableComments[i]);
+                    currentNode.AppendChild(tunableComment);
+                    currentNode.InsertBefore(xmlDocument.CreateSignificantWhitespace("\r\n" + indentation), tunableComment);
+                }
+
+                object initialValue = null;
+
+                XmlElement tunableElement = null;
+
+                // Fetch any values assigned in the code to the tunable field
+                List<Instruction> instructions;
+                if (instructionsByFieldName.TryGetValue(field.Name, out instructions))
+                {
+                    // Fetch the primitive value of the field
+                    if (instructions.Count == 1)
+                    {
+                        if (instructions[0].OpCode == OpCodes.Newobj)
+                        {
+                            MethodDefinition methodDefinition = null;
+                            var methodReference = instructions[0].Operand as MethodReference;
+                            try
+                            {
+                                methodDefinition = methodReference.Resolve();
+                            }
+                            catch (AssemblyResolutionException)
+                            {
+                                foreach (var assembly in Assemblies)
+                                {
+                                    foreach (var type in assembly.MainModule.GetTypes())
+                                    {
+                                        if (type.FullName == methodReference.DeclaringType.FullName)
+                                        {
+                                            foreach (var method in type.Methods)
+                                            {
+                                                if (method.FullName == methodReference.FullName)
+                                                {
+                                                    methodDefinition = method;
+                                                    goto iterateThroughInstructions;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                throw;
+                            }
+                            iterateThroughInstructions:
+                            var tempInstructions = new List<Instruction>();
+                            var tempInstructionsByFieldName = new Dictionary<string, List<Instruction>>();
+                            foreach (var instruction in methodDefinition.Body.Instructions)
+                            {
+                                if (instruction.OpCode == OpCodes.Stfld || instruction.OpCode == OpCodes.Stsfld)
+                                {
+                                    tempInstructionsByFieldName.Add(((FieldReference)instruction.Operand).Name, tempInstructions.FindAll(x => x.OpCode != OpCodes.Ldarg_0));
+                                    tempInstructions.Clear();
+                                    continue;
+                                }
+                                tempInstructions.Add(instruction);
+                            }
+
+                            var tempTunableFields = methodDefinition.DeclaringType.Fields.ToArray();
+                            var tempTunableComments = Array.ConvertAll(tempTunableFields, x =>
+                                {
+                                    var index = Array.FindIndex(x.CustomAttributes.ToArray(), y => y.AttributeType.Name == "TunableComment" || y.AttributeType.Name == "TunableCommentAttribute");
+                                    return index == -1 ? null : " " + x.CustomAttributes[index].ConstructorArguments[0].Value.ToString().Trim(' ') + " ";
+                                });
+
+                            tunableElement = xmlDocument.CreateElement(field.Name);
+                            currentNode.AppendChild(tunableElement);
+
+                            PopulateFields(xmlDocument, tunableElement, tempTunableFields, tempTunableComments, !Array.TrueForAll(tempTunableComments, x => x == null), tempInstructionsByFieldName, indentation + "  ");
+                        }
+                        initialValue = instructions[0].Operand ?? (field.FieldType.Name == "Boolean" ? (object)(instructions[0].OpCode == OpCodes.Ldc_I4_1) : (object)(instructions[0].OpCode == OpCodes.Ldc_I4_1 ? 1 : 0));
+                    }
+
+                    // Fetch the array value of the field
+                    if (instructions.Count > 1 && instructions[1].OpCode == OpCodes.Newarr)
+                    {
+                        // Remove the first four instructions as they are irrelevant (since we have already determined we are dealing with an array)
+                        instructions.RemoveRange(0, 4);
+
+                        var arrayString = "";
+                        for (var j = 0; j < instructions.Count; j++)
+                        {
+                            if (instructions[j].OpCode.ToString().StartsWith("stelem"))
+                            {
+                                break;
+                            }
+
+                            // Get only the odd-numbered instructions (the ones that hold the elements), as the even-numbered ones are for the indices
+                            if ((j & 1) == 1)
+                            {
+                                arrayString += instructions[j].Operand + ",";
+                            }
+                        }
+                        initialValue = arrayString.TrimEnd(',');
+                    }
+                }
+
+                // Create and add the tunable field as an element in the XML
+                if (tunableElement == null)
+                {
+                    tunableElement = xmlDocument.CreateElement(field.Name);
+                    tunableElement.SetAttribute("value", initialValue?.ToString() ?? (field.FieldType.Name == "Boolean" ? "False" : field.FieldType.Name == "String" || field.FieldType.IsArray ? "" : "0"));
+                    currentNode.AppendChild(tunableElement);
+                }
+
+                // Do formatting for XMLs with comments
+                if (hasTunableComments)
+                {
+                    currentNode.InsertBefore(xmlDocument.CreateSignificantWhitespace("\r\n" + indentation), tunableElement);
+                    currentNode.InsertAfter(xmlDocument.CreateSignificantWhitespace(i == tunableFields.Length - 1 ? "\r\n" + indentation.Substring(2) : "\r\n"), tunableElement);
+                }
+            }
         }
     }
 }
