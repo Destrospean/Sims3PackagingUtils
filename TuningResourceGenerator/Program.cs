@@ -324,7 +324,6 @@ namespace Destrospean.TuningResourceGenerator
 
                         for (var j = 0; j < instructions.Count - 1; j++)
                         {
-                            Console.WriteLine(instructions[j]);
                             tempInstructionsByFieldName[tempTunableFields[j].Name] = new List<Instruction>
                                 {
                                     instructions[j]
