@@ -57,7 +57,13 @@ namespace Destrospean.TuningResourceGenerator
                     var tunableComments = Array.ConvertAll(tunableFields, x =>
                         {
                             var index = Array.FindIndex(x.CustomAttributes.ToArray(), y => y.AttributeType.Name == "TunableComment" || y.AttributeType.Name == "TunableCommentAttribute");
-                            return index == -1 ? null : " " + x.CustomAttributes[index].ConstructorArguments[0].Value.ToString().Trim(' ') + " ";
+                            if (index == -1)
+                            {
+                                return null;
+                            }
+                            var value = x.CustomAttributes[index].ConstructorArguments[0].Value.ToString();
+                            value = value.Substring(value.StartsWith(" ") ? 1 : 0);
+                            return " " + (value.EndsWith(" ") ? value.Remove(value.LastIndexOf(" ")) : value) + " ";
                         });
                     
                     var hasTunableComments = !Array.TrueForAll(tunableComments, x => x == null);
@@ -163,7 +169,7 @@ namespace Destrospean.TuningResourceGenerator
                         if (instructions[0].OpCode == OpCodes.Newobj)
                         {
                             MethodDefinition methodDefinition = null;
-                            var methodReference = instructions[0].Operand as MethodReference;
+                            var methodReference = (MethodReference)instructions[0].Operand;
                             try
                             {
                                 methodDefinition = methodReference.Resolve();
@@ -196,7 +202,7 @@ namespace Destrospean.TuningResourceGenerator
                             {
                                 if (instruction.OpCode == OpCodes.Stfld || instruction.OpCode == OpCodes.Stsfld)
                                 {
-                                    tempInstructionsByFieldName.Add(((FieldReference)instruction.Operand).Name, tempInstructions.FindAll(x => x.OpCode != OpCodes.Ldarg_0));
+                                    tempInstructionsByFieldName[((FieldReference)instruction.Operand).Name] = tempInstructions.FindAll(x => x.OpCode != OpCodes.Ldarg_0);
                                     tempInstructions.Clear();
                                     continue;
                                 }
@@ -207,7 +213,13 @@ namespace Destrospean.TuningResourceGenerator
                             var tempTunableComments = Array.ConvertAll(tempTunableFields, x =>
                                 {
                                     var index = Array.FindIndex(x.CustomAttributes.ToArray(), y => y.AttributeType.Name == "TunableComment" || y.AttributeType.Name == "TunableCommentAttribute");
-                                    return index == -1 ? null : " " + x.CustomAttributes[index].ConstructorArguments[0].Value.ToString().Trim(' ') + " ";
+                                    if (index == -1)
+                                    {
+                                        return null;
+                                    }
+                                    var value = x.CustomAttributes[index].ConstructorArguments[0].Value.ToString();
+                                    value = value.Substring(value.StartsWith(" ") ? 1 : 0);
+                                    return " " + (value.EndsWith(" ") ? value.Remove(value.LastIndexOf(" ")) : value) + " ";
                                 });
 
                             tunableElement = xmlDocument.CreateElement(field.Name);
@@ -215,7 +227,114 @@ namespace Destrospean.TuningResourceGenerator
 
                             PopulateFields(xmlDocument, tunableElement, tempTunableFields, tempTunableComments, !Array.TrueForAll(tempTunableComments, x => x == null), tempInstructionsByFieldName, indentation + "  ");
                         }
-                        initialValue = instructions[0].Operand ?? (field.FieldType.Name == "Boolean" ? (object)(instructions[0].OpCode == OpCodes.Ldc_I4_1) : (object)(instructions[0].OpCode == OpCodes.Ldc_I4_1 ? 1 : 0));
+                        initialValue = instructions[0].Operand ?? (field.FieldType.Name == "Boolean" ? (object)(instructions[0].OpCode == OpCodes.Ldc_I4_1) : null);
+                        if (initialValue == null)
+                        {
+                            switch (instructions[0].OpCode.Code)
+                            {
+                                case Code.Ldc_I4_M1:
+                                    initialValue = -1;
+                                    break;
+                                case Code.Ldc_I4_0:
+                                    initialValue = 0;
+                                    break;
+                                case Code.Ldc_I4_1:
+                                    initialValue = 1;
+                                    break;
+                                case Code.Ldc_I4_2:
+                                    initialValue = 2;
+                                    break;
+                                case Code.Ldc_I4_3:
+                                    initialValue = 3;
+                                    break;
+                                case Code.Ldc_I4_4:
+                                    initialValue = 4;
+                                    break;
+                                case Code.Ldc_I4_5:
+                                    initialValue = 5;
+                                    break;
+                                case Code.Ldc_I4_6:
+                                    initialValue = 6;
+                                    break;
+                                case Code.Ldc_I4_7:
+                                    initialValue = 7;
+                                    break;
+                                case Code.Ldc_I4_8:
+                                    initialValue = 8;
+                                    break;
+                            }
+                        }
+                    }
+
+                    if (instructions.Count > 1 && instructions[instructions.Count - 1].OpCode == OpCodes.Newobj)
+                    {
+                        MethodDefinition methodDefinition = null;
+                        var methodReference = (MethodReference)instructions[instructions.Count - 1].Operand;
+                        try
+                        {
+                            methodDefinition = methodReference.Resolve();
+                        }
+                        catch (AssemblyResolutionException)
+                        {
+                            foreach (var assembly in Assemblies)
+                            {
+                                foreach (var type in assembly.MainModule.GetTypes())
+                                {
+                                    if (type.FullName == methodReference.DeclaringType.FullName)
+                                    {
+                                        foreach (var method in type.Methods)
+                                        {
+                                            if (method.FullName == methodReference.FullName)
+                                            {
+                                                methodDefinition = method;
+                                                goto iterateThroughInstructions;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            throw;
+                        }
+                        iterateThroughInstructions:
+                        var tempInstructions = new List<Instruction>();
+                        var tempInstructionsByFieldName = new Dictionary<string, List<Instruction>>();
+                        foreach (var instruction in methodDefinition.Body.Instructions)
+                        {
+                            if (instruction.OpCode == OpCodes.Stfld || instruction.OpCode == OpCodes.Stsfld)
+                            {
+                                tempInstructionsByFieldName[((FieldReference)instruction.Operand).Name] = tempInstructions.FindAll(x => x.OpCode != OpCodes.Ldarg_0);
+                                tempInstructions.Clear();
+                                continue;
+                            }
+                            tempInstructions.Add(instruction);
+                        }
+
+                        var tempTunableFields = methodDefinition.DeclaringType.Fields.ToArray();
+                        var tempTunableComments = Array.ConvertAll(tempTunableFields, x =>
+                            {
+                                var index = Array.FindIndex(x.CustomAttributes.ToArray(), y => y.AttributeType.Name == "TunableComment" || y.AttributeType.Name == "TunableCommentAttribute");
+                                if (index == -1)
+                                {
+                                    return null;
+                                }
+                                var value = x.CustomAttributes[index].ConstructorArguments[0].Value.ToString();
+                                value = value.Substring(value.StartsWith(" ") ? 1 : 0);
+                                return " " + (value.EndsWith(" ") ? value.Remove(value.LastIndexOf(" ")) : value) + " ";
+                            });
+
+                        for (var j = 0; j < instructions.Count - 1; j++)
+                        {
+                            Console.WriteLine(instructions[j]);
+                            tempInstructionsByFieldName[tempTunableFields[j].Name] = new List<Instruction>
+                                {
+                                    instructions[j]
+                                };
+                        }
+
+                        tunableElement = xmlDocument.CreateElement(field.Name);
+                        currentNode.AppendChild(tunableElement);
+
+                        PopulateFields(xmlDocument, tunableElement, tempTunableFields, tempTunableComments, !Array.TrueForAll(tempTunableComments, x => x == null), tempInstructionsByFieldName, indentation + "  ");
                     }
 
                     // Fetch the array value of the field
@@ -238,7 +357,7 @@ namespace Destrospean.TuningResourceGenerator
                                 arrayString += instructions[j].Operand + ",";
                             }
                         }
-                        initialValue = arrayString.TrimEnd(',');
+                        initialValue = arrayString.EndsWith(",") ? arrayString.Remove(arrayString.LastIndexOf(",")) : arrayString;
                     }
                 }
 
