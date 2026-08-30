@@ -279,7 +279,7 @@ namespace Destrospean.TuningResourceGenerator
                 if (tunableElement == null)
                 {
                     tunableElement = xmlDocument.CreateElement(field.Name);
-                    tunableElement.SetAttribute("value", initialValue?.ToString() ?? (field.FieldType.Name == "Boolean" ? "False" : field.FieldType.Name == "String" || field.FieldType.IsArray ? "" : "0"));
+                    tunableElement.SetAttribute("value", (initialValue is float ? ((float)initialValue).ToString(System.Globalization.CultureInfo.InvariantCulture) : initialValue)?.ToString() ?? (field.FieldType.Name == "Boolean" ? "False" : field.FieldType.Name == "String" || field.FieldType.IsArray ? "" : "0"));
                     currentNode.AppendChild(tunableElement);
                 }
 
