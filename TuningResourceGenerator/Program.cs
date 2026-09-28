@@ -171,27 +171,51 @@ namespace Destrospean.TuningResourceGenerator
                 List<Instruction> instructions;
                 if (instructionsByFieldName.TryGetValue(field.Name, out instructions) && instructions.Count > 0)
                 {
-                    // Fetch the primitive value of the field
-                    if (instructions.Count == 1)
+                    if (instructions[instructions.Count - 1].OpCode == OpCodes.Newobj)
                     {
-                        if (instructions[0].OpCode == OpCodes.Newobj)
+                        MethodDefinition methodDefinition;
+                        if (TryGetMethodDefinition((MethodReference)instructions[instructions.Count - 1].Operand, out methodDefinition))
                         {
-                            MethodDefinition methodDefinition;
-                            if (TryGetMethodDefinition((MethodReference)instructions[0].Operand, out methodDefinition))
-                            {
-                                // Create and add the tunable field as an element in the XML
-                                tunableElement = xmlDocument.CreateElement(field.Name);
-                                currentNode.AppendChild(tunableElement);
+                            // Fetch all the tunable fields of the declaring type
+                            var tempTunableFields = methodDefinition.DeclaringType.Fields.ToArray();
 
-                                // Populate the created node with the fields of said node's corresponding class
-                                xmlDocument.PopulateFields(tunableElement, methodDefinition.DeclaringType.Fields.ToArray(), GetInstructionsByFieldName(methodDefinition, x => x.OpCode != OpCodes.Ldarg_0), indentation + "  ");
+                            var tempInstructionsByFieldName = new Dictionary<string, List<Instruction>>();
+                            for (var j = 0; j < instructions.Count - 1; j++)
+                            {
+                                tempInstructionsByFieldName[tempTunableFields[j].Name] = new List<Instruction>
+                                    {
+                                        instructions[j]
+                                    };
+                            }
+
+                            // Create and add the tunable field as an element in the XML
+                            tunableElement = xmlDocument.CreateElement(field.Name);
+                            currentNode.AppendChild(tunableElement);
+
+                            // Populate the created node with the fields of said node's corresponding class
+                            xmlDocument.PopulateFields(tunableElement, tempTunableFields, tempInstructionsByFieldName, indentation + "  ");
+                        }
+                    }
+                    // Fetch the array value of the field
+                    else if (instructions.Exists(x => x.OpCode == OpCodes.Newarr))
+                    {
+                        var arrayString = "";
+                        for (var j = 0; j < instructions.Count; j++)
+                        {
+                            if (instructions[j].OpCode.ToString().StartsWith("stelem"))
+                            {
+                                arrayString += instructions[j - 1].Operand + ",";
                             }
                         }
-
-                        initialValue = instructions[0].Operand ?? (field.FieldType.Name == "Boolean" ? (object)(instructions[0].OpCode == OpCodes.Ldc_I4_1) : null);
+                        initialValue = arrayString.EndsWith(",") ? arrayString.Remove(arrayString.Length - 1) : arrayString;
+                    }
+                    // Fetch the primitive value of the field
+                    else
+                    {
+                        initialValue = instructions[instructions.Count - 1].Operand ?? (field.FieldType.Name == "Boolean" ? (object)(instructions[instructions.Count - 1].OpCode == OpCodes.Ldc_I4_1) : null);
                         if (initialValue == null)
                         {
-                            switch (instructions[0].OpCode.Code)
+                            switch (instructions[instructions.Count - 1].OpCode.Code)
                             {
                                 case Code.Ldc_I4_M1:
                                     initialValue = -1;
@@ -225,53 +249,6 @@ namespace Destrospean.TuningResourceGenerator
                                     break;
                             }
                         }
-                    }
-                    else if (instructions[instructions.Count - 1].OpCode == OpCodes.Newobj)
-                    {
-                        MethodDefinition methodDefinition;
-                        if (TryGetMethodDefinition((MethodReference)instructions[instructions.Count - 1].Operand, out methodDefinition))
-                        {
-                            // Fetch all the tunable fields of the declaring type
-                            var tempTunableFields = methodDefinition.DeclaringType.Fields.ToArray();
-
-                            var tempInstructionsByFieldName = new Dictionary<string, List<Instruction>>();
-                            for (var j = 0; j < instructions.Count - 1; j++)
-                            {
-                                tempInstructionsByFieldName[tempTunableFields[j].Name] = new List<Instruction>
-                                    {
-                                        instructions[j]
-                                    };
-                            }
-
-                            // Create and add the tunable field as an element in the XML
-                            tunableElement = xmlDocument.CreateElement(field.Name);
-                            currentNode.AppendChild(tunableElement);
-
-                            // Populate the created node with the fields of said node's corresponding class
-                            xmlDocument.PopulateFields(tunableElement, tempTunableFields, tempInstructionsByFieldName, indentation + "  ");
-                        }
-                    }
-                    // Fetch the array value of the field
-                    else if (instructions[1].OpCode == OpCodes.Newarr)
-                    {
-                        // Remove the first four instructions as they are irrelevant (since we have already determined we are dealing with an array)
-                        instructions.RemoveRange(0, 4);
-
-                        var arrayString = "";
-                        for (var j = 0; j < instructions.Count; j++)
-                        {
-                            if (instructions[j].OpCode.ToString().StartsWith("stelem"))
-                            {
-                                break;
-                            }
-
-                            // Get only the odd-numbered instructions (the ones that hold the elements), as the even-numbered ones are for the indices
-                            if ((j & 1) == 1)
-                            {
-                                arrayString += instructions[j].Operand + ",";
-                            }
-                        }
-                        initialValue = arrayString.EndsWith(",") ? arrayString.Remove(arrayString.Length - 1) : arrayString;
                     }
                 }
 
