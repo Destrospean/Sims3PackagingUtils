@@ -247,6 +247,84 @@ namespace Destrospean.TuningResourceGenerator
                                 case Code.Ldc_I4_8:
                                     initialValue = 8;
                                     break;
+                                }
+                        }
+                        if (instructions[instructions.Count - 1].OpCode.Code.ToString().StartsWith("Conv"))
+                        {
+                            initialValue = instructions[instructions.Count - 2].Operand;
+                            if (initialValue == null)
+                            {
+                                switch (instructions[instructions.Count - 2].OpCode.Code)
+                                {
+                                    case Code.Ldc_I4_M1:
+                                        initialValue = -1;
+                                        break;
+                                    case Code.Ldc_I4_0:
+                                        initialValue = 0;
+                                        break;
+                                    case Code.Ldc_I4_1:
+                                        initialValue = 1;
+                                        break;
+                                    case Code.Ldc_I4_2:
+                                        initialValue = 2;
+                                        break;
+                                    case Code.Ldc_I4_3:
+                                        initialValue = 3;
+                                        break;
+                                    case Code.Ldc_I4_4:
+                                        initialValue = 4;
+                                        break;
+                                    case Code.Ldc_I4_5:
+                                        initialValue = 5;
+                                        break;
+                                    case Code.Ldc_I4_6:
+                                        initialValue = 6;
+                                        break;
+                                    case Code.Ldc_I4_7:
+                                        initialValue = 7;
+                                        break;
+                                    case Code.Ldc_I4_8:
+                                        initialValue = 8;
+                                        break;
+                                }
+                            }
+                        }
+                        TypeDefinition type = null;
+                        try
+                        {
+                            type = field.FieldType.Resolve();
+                        }
+                        catch (AssemblyResolutionException)
+                        {
+                            foreach (var assembly in Assemblies)
+                            {
+                                if (type != null)
+                                {
+                                    break;
+                                }
+                                foreach (var tempType in assembly.MainModule.GetTypes())
+                                {
+                                    if (tempType.FullName == field.FieldType.FullName)
+                                    {
+                                        type = tempType;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        if (type?.IsEnum ?? false)
+                        {
+                            var enumString = "";
+                            foreach (var enumField in type.Fields)
+                            {
+                                if (enumField.Name != "value__" && (Convert.ToUInt64(initialValue) & Convert.ToUInt16(enumField.Constant)) != 0)
+                                {
+                                    enumString += ", " + enumField.Name;
+                                }
+                            }
+                            if (enumString.StartsWith(", "))
+                            {
+                                initialValue = enumString.Substring(2);
                             }
                         }
                     }
