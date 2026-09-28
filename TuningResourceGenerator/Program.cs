@@ -317,7 +317,7 @@ namespace Destrospean.TuningResourceGenerator
                             var enumString = "";
                             foreach (var enumField in type.Fields)
                             {
-                                if (enumField.Name != "value__" && (Convert.ToUInt64(initialValue) & Convert.ToUInt16(enumField.Constant)) != 0)
+                                if (enumField.Name != "value__" && (Convert.ToUInt64(initialValue) & Convert.ToUInt64(enumField.Constant)) != 0)
                                 {
                                     enumString += ", " + enumField.Name;
                                 }
