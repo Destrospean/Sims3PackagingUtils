@@ -116,15 +116,17 @@ namespace Destrospean.TuningResourceGenerator
                         // Save the XML to the stream
                         xmlDocument.Save(xmlWriter);
 
+                        var instanceName = type.FullName.Replace("/", "+");
+
                         // Get the hash of the namespace and class for the instance of the _XML resource
-                        var instance = System.Security.Cryptography.FNV64.GetHash(type.FullName);
+                        var instance = System.Security.Cryptography.FNV64.GetHash(instanceName);
 
                         // Set the name of the tuning _XML resource
                         if (nameMapResource.ContainsKey(instance))
                         {
                             nameMapResource.Remove(instance);
                         }
-                        nameMapResource.Add(instance, type.FullName);
+                        nameMapResource.Add(instance, instanceName);
 
                         // Check if any _XML resource with that instance already exists and replace it with the XML stream if so, otherwise add a new one with said XML stream
                         var matchingTuningResourceIndexEntries = package.FindAll(x => x.ResourceType == 0x333406C && x.ResourceGroup == 0 && x.Instance == instance);
