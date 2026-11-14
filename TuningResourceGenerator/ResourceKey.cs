@@ -32,11 +32,7 @@ namespace Destrospean.TuningResourceGenerator
         public int CompareTo(IResourceKey other)
         {
             var result = ResourceType.CompareTo(other.ResourceType);
-            if (result != 0)
-            {
-                return result;
-            }
-            if ((result = ResourceGroup.CompareTo(other.ResourceGroup)) != 0)
+            if (result != 0 || (result = ResourceGroup.CompareTo(other.ResourceGroup)) != 0)
             {
                 return result;
             }
@@ -45,7 +41,7 @@ namespace Destrospean.TuningResourceGenerator
 
         public bool Equals(IResourceKey a, IResourceKey b)
         {
-            return a.Equals(b);
+            return a == null && b == null || (a?.Equals(b) ?? false);
         }
 
         public bool Equals(IResourceKey other)

@@ -1,14 +1,18 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Globalization;
+using System.IO;
+using System.Security.Cryptography;
 using System.Xml;
 using Mono.Cecil;
 using Mono.Cecil.Cil;
+using s3pi.Interfaces;
 
 namespace Destrospean.TuningResourceGenerator
 {
-    static class Program
+    internal static class Program
     {
-        static List<AssemblyDefinition> sAssemblies;
+        private static List<AssemblyDefinition> sAssemblies;
 
         public static List<AssemblyDefinition> Assemblies
         {
@@ -79,13 +83,13 @@ namespace Destrospean.TuningResourceGenerator
 
             // Fetch the _KEY resource, or create a new one if one doesn't exist
             var nameMapResourceIndexEntries = package.FindAll(x => x.ResourceType == 0x166038C);
-            var nameMapResource = new NameMapResource.NameMapResource(0, nameMapResourceIndexEntries.Count == 0 ? null : ((s3pi.Interfaces.APackage)package).GetResource(nameMapResourceIndexEntries[0]));
+            var nameMapResource = new NameMapResource.NameMapResource(0, nameMapResourceIndexEntries.Count == 0 ? null : ((APackage)package).GetResource(nameMapResourceIndexEntries[0]));
 
             // Iterate through the assembly resources to get any classes with tunable fields
             foreach (var resourceIndexEntry in package.FindAll(x => x.ResourceType == 0x73FAA07))
             {
                 // Iterate through the classes with tunable fields
-                foreach (var type in AssemblyDefinition.ReadAssembly(new ScriptResource.ScriptResource(0, ((s3pi.Interfaces.APackage)package).GetResource(resourceIndexEntry)).Assembly.BaseStream).MainModule.GetTypes())
+                foreach (var type in AssemblyDefinition.ReadAssembly(new ScriptResource.ScriptResource(0, ((APackage)package).GetResource(resourceIndexEntry)).Assembly.BaseStream).MainModule.GetTypes())
                 {
                     // Fetch all the tunable fields of the current class
                     var tunableFields = Array.FindAll(type.Fields.ToArray(), x => Array.Exists(x.CustomAttributes.ToArray(), y => y.AttributeType.Name == "Tunable" || y.AttributeType.Name == "TunableAttribute"));
@@ -106,7 +110,7 @@ namespace Destrospean.TuningResourceGenerator
                     if (tunableFields.Length > 0)
                     {
                         // Create the XML stream and writer
-                        var xmlStream = new System.IO.MemoryStream();
+                        var xmlStream = new MemoryStream();
                         var xmlWriter = XmlWriter.Create(xmlStream, new XmlWriterSettings
                             {
                                 Indent = true,
@@ -119,7 +123,7 @@ namespace Destrospean.TuningResourceGenerator
                         var instanceName = type.FullName.Replace("/", "+");
 
                         // Get the hash of the namespace and class for the instance of the _XML resource
-                        var instance = System.Security.Cryptography.FNV64.GetHash(instanceName);
+                        var instance = FNV64.GetHash(instanceName);
 
                         // Set the name of the tuning _XML resource
                         if (nameMapResource.ContainsKey(instance))
@@ -170,13 +174,11 @@ namespace Destrospean.TuningResourceGenerator
                 XmlElement tunableElement = null;
 
                 // Fetch any values assigned in the code to the tunable field
-                List<Instruction> instructions;
-                if (instructionsByFieldName.TryGetValue(field.Name, out instructions) && instructions.Count > 0)
+                if (instructionsByFieldName.TryGetValue(field.Name, out var instructions) && instructions.Count > 0)
                 {
                     if (instructions[instructions.Count - 1].OpCode == OpCodes.Newobj)
                     {
-                        MethodDefinition methodDefinition;
-                        if (TryGetMethodDefinition((MethodReference)instructions[instructions.Count - 1].Operand, out methodDefinition))
+                        if (TryGetMethodDefinition((MethodReference)instructions[instructions.Count - 1].Operand, out var methodDefinition))
                         {
                             // Fetch all the tunable fields of the declaring type
                             var tempTunableFields = methodDefinition.DeclaringType.Fields.ToArray();
@@ -336,7 +338,7 @@ namespace Destrospean.TuningResourceGenerator
                 if (tunableElement == null)
                 {
                     tunableElement = xmlDocument.CreateElement(field.Name);
-                    tunableElement.SetAttribute("value", (initialValue is float ? ((float)initialValue).ToString(System.Globalization.CultureInfo.InvariantCulture) : initialValue)?.ToString() ?? (field.FieldType.Name == "Boolean" ? "False" : field.FieldType.Name == "String" || field.FieldType.IsArray ? "" : "0"));
+                    tunableElement.SetAttribute("value", (initialValue is float value ? value.ToString(CultureInfo.InvariantCulture) : initialValue)?.ToString() ?? (field.FieldType.Name == "Boolean" ? "False" : field.FieldType.Name == "String" || field.FieldType.IsArray ? "" : "0"));
                     currentNode.AppendChild(tunableElement);
                 }
 
