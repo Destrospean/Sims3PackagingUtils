@@ -7,6 +7,7 @@ using System.Xml;
 using Mono.Cecil;
 using Mono.Cecil.Cil;
 using s3pi.Interfaces;
+using s3pi.Package;
 
 namespace Destrospean.TuningResourceGenerator
 {
@@ -79,7 +80,7 @@ namespace Destrospean.TuningResourceGenerator
             }
 
             // Load the package
-            var package = s3pi.Package.Package.OpenPackage(0, args[0], true);
+            var package = Package.OpenPackage(0, args[0], true);
 
             // Fetch the _KEY resource, or create a new one if one doesn't exist
             var nameMapResourceIndexEntries = package.FindAll(x => x.ResourceType == 0x166038C);
