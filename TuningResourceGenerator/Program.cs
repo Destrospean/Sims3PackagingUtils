@@ -135,12 +135,12 @@ namespace Destrospean.TuningResourceGenerator
                         nameMapResource.Add(instance, instanceName);
 
                         // Check if any _XML resource with that instance already exists and replace it with the XML stream if so, otherwise add a new one with said XML stream
-                        var matchingTuningResourceIndexEntries = package.FindAll(x => x.ResourceType == 0x333406C && x.ResourceGroup == 0 && x.Instance == instance);
+                        var matchingTuningResourceIndexEntries = package.FindAll(x => x.ResourceType == 0x0333406C && x.ResourceGroup == 0 && x.Instance == instance);
                         if (matchingTuningResourceIndexEntries.Count > 0)
                         {
                             package.DeleteResource(matchingTuningResourceIndexEntries[0]);
                         }
-                        package.AddResource(new ResourceKey(0x333406C, 0, instance), xmlStream, true);
+                        package.AddResource(new ResourceKey(0x0333406C, 0, instance), xmlStream, true);
                     }
                 }
             }
