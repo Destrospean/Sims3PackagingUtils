@@ -149,7 +149,7 @@ namespace Destrospean.TuningResourceGenerator
             {
                 package.DeleteResource(nameMapResourceIndexEntries[0]);
             }
-            package.AddResource(new ResourceKey(0x166038C, nameMapResourceIndexEntries.Count == 0 ? 0 : nameMapResourceIndexEntries[0].ResourceGroup, nameMapResourceIndexEntries.Count == 0 ? 0 : nameMapResourceIndexEntries[0].Instance), nameMapResource.Stream, true);
+            package.AddResource(new ResourceKey(0x0166038C, nameMapResourceIndexEntries.Count == 0 ? 0 : nameMapResourceIndexEntries[0].ResourceGroup, nameMapResourceIndexEntries.Count == 0 ? 0 : nameMapResourceIndexEntries[0].Instance), nameMapResource.Stream, true);
 
             // Save the modified package
             package.SavePackage();
