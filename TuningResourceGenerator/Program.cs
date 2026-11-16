@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Security.Cryptography;
 using System.Xml;
 using Mono.Cecil;
@@ -83,11 +84,11 @@ namespace Destrospean.TuningResourceGenerator
             var package = Package.OpenPackage(0, args[0], true);
 
             // Fetch the _KEY resource, or create a new one if one doesn't exist
-            var nameMapResourceIndexEntries = package.FindAll(x => x.ResourceType == 0x166038C);
+            var nameMapResourceIndexEntries = package.FindAll(x => x.ResourceType == 0x0166038C);
             var nameMapResource = new NameMapResource.NameMapResource(0, nameMapResourceIndexEntries.Count == 0 ? null : ((APackage)package).GetResource(nameMapResourceIndexEntries[0]));
 
             // Iterate through the assembly resources to get any classes with tunable fields
-            foreach (var resourceIndexEntry in package.FindAll(x => x.ResourceType == 0x73FAA07))
+            foreach (var resourceIndexEntry in package.FindAll(x => x.ResourceType == 0x073FAA07))
             {
                 // Iterate through the classes with tunable fields
                 foreach (var type in AssemblyDefinition.ReadAssembly(new ScriptResource.ScriptResource(0, ((APackage)package).GetResource(resourceIndexEntry)).Assembly.BaseStream).MainModule.GetTypes())
@@ -301,12 +302,8 @@ namespace Destrospean.TuningResourceGenerator
                         }
                         catch (AssemblyResolutionException)
                         {
-                            foreach (var assembly in Assemblies)
+                            foreach (var assembly in Assemblies.TakeWhile(assembly => type == null))
                             {
-                                if (type != null)
-                                {
-                                    break;
-                                }
                                 foreach (var tempType in assembly.MainModule.GetTypes())
                                 {
                                     if (tempType.FullName == field.FieldType.FullName)
@@ -319,17 +316,21 @@ namespace Destrospean.TuningResourceGenerator
                         }
                         if (type?.IsEnum ?? false)
                         {
-                            var enumString = "";
-                            foreach (var enumField in type.Fields)
+                            if (Array.Exists(type.CustomAttributes.ToArray(), x => x.AttributeType.Name == "Flags" || x.AttributeType.Name == "FlagsAttribute"))
                             {
-                                if (enumField.Name != "value__" && (Convert.ToUInt64(initialValue) & Convert.ToUInt64(enumField.Constant)) != 0)
+                                var enumString = (from enumField in type.Fields let initVal = Convert.ToUInt64(initialValue) let enumFieldVal = Convert.ToUInt64(enumField.Constant) where enumField.Name != "value__" && ((initVal & enumFieldVal) != 0 || initVal == enumFieldVal) select enumField).Aggregate("", (current, enumField) => current + ", " + enumField.Name);
+                                if (enumString.StartsWith(", "))
                                 {
-                                    enumString += ", " + enumField.Name;
+                                    initialValue = enumString.Substring(2);
                                 }
                             }
-                            if (enumString.StartsWith(", "))
+                            else
                             {
-                                initialValue = enumString.Substring(2);
+                                foreach (var enumField in type.Fields.Where(enumField => Convert.ToUInt64(initialValue) == Convert.ToUInt64(enumField.Constant)))
+                                {
+                                    initialValue = enumField.Name;
+                                    break;
+                                }
                             }
                         }
                     }
