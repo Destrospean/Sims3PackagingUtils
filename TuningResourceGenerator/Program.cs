@@ -363,22 +363,10 @@ namespace Destrospean.TuningResourceGenerator
             }
             catch (AssemblyResolutionException)
             {
-                foreach (var assembly in Assemblies)
+                foreach (var method in from assembly in Assemblies from type in assembly.MainModule.GetTypes() where type.FullName == methodReference.DeclaringType.FullName from method in type.Methods where method.FullName == methodReference.FullName select method)
                 {
-                    foreach (var type in assembly.MainModule.GetTypes())
-                    {
-                        if (type.FullName == methodReference.DeclaringType.FullName)
-                        {
-                            foreach (var method in type.Methods)
-                            {
-                                if (method.FullName == methodReference.FullName)
-                                {
-                                    methodDefinition = method;
-                                    return true;
-                                }
-                            }
-                        }
-                    }
+                    methodDefinition = method;
+                    return true;
                 }
             }
             return false;
